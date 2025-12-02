@@ -98,40 +98,44 @@ class StudentResultsSummaryView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     
     def get(self, request, student_id, term_id):
-        # Check permissions
-        if request.user.is_parent:
-            # Parents can only view their children
-            if not request.user.children.filter(id=student_id).exists():
+        # Check permissions and get student
+        try:
+            if request.user.is_parent:
+                # Parents can only view their children
+                student = Student.objects.get(id=student_id, parent=request.user, is_active=True)
+            else:
+                # Admin/Teachers can view any student
+                student = Student.objects.get(id=student_id)
+            
+            term = Term.objects.get(id=term_id)
+        except Student.DoesNotExist:
+            if request.user.is_parent:
                 return Response(
                     {'error': 'You can only view your children\'s results'},
                     status=status.HTTP_403_FORBIDDEN
                 )
-        
-        try:
-            student = Student.objects.get(id=student_id)
-            term = Term.objects.get(id=term_id)
-        except (Student.DoesNotExist, Term.DoesNotExist):
             return Response(
-                {'error': 'Student or Term not found'},
+                {'error': 'Student not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Term.DoesNotExist:
+            return Response(
+                {'error': 'Term not found'},
                 status=status.HTTP_404_NOT_FOUND
             )
         
         # Get all results for this student and term
         results = Result.objects.filter(student=student, term=term)
         
-        if not results.exists():
-            return Response(
-                {'message': 'No results found for this student in this term'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        
-        # Calculate totals
+        # Calculate totals (handle empty results case)
         total_marks_obtained = results.aggregate(Sum('marks_obtained'))['marks_obtained__sum'] or 0
         total_marks_possible = results.aggregate(Sum('total_marks'))['total_marks__sum'] or 0
         overall_percentage = (total_marks_obtained / total_marks_possible * 100) if total_marks_possible > 0 else 0
         
         # Calculate overall grade
-        if overall_percentage >= 90:
+        if total_marks_possible == 0:
+            overall_grade = None
+        elif overall_percentage >= 90:
             overall_grade = 'A+'
         elif overall_percentage >= 80:
             overall_grade = 'A'
@@ -152,13 +156,89 @@ class StudentResultsSummaryView(APIView):
             'term_id': term.id,
             'term_display': str(term),
             'results': ResultListSerializer(results, many=True).data,
-            'total_marks_obtained': total_marks_obtained,
-            'total_marks_possible': total_marks_possible,
+            'total_marks_obtained': float(total_marks_obtained),
+            'total_marks_possible': float(total_marks_possible),
             'overall_percentage': round(overall_percentage, 2),
             'overall_grade': overall_grade,
+            'has_results': results.exists(),
         }
         
         return Response(data)
+
+
+class StudentPerformanceTrendView(APIView):
+    """
+    Get student performance across all terms (for trend analysis)
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request, student_id):
+        # Check permissions and get student
+        try:
+            if request.user.is_parent:
+                # Parents can only view their children
+                student = Student.objects.get(id=student_id, parent=request.user, is_active=True)
+            else:
+                # Admin/Teachers can view any student
+                student = Student.objects.get(id=student_id)
+        except Student.DoesNotExist:
+            if request.user.is_parent:
+                return Response(
+                    {'error': 'You can only view your children\'s results'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            return Response(
+                {'error': 'Student not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Get all terms that have results for this student
+        terms_with_results = Term.objects.filter(
+            results__student=student
+        ).distinct().order_by('start_date', 'term_number')
+        
+        performance_data = []
+        
+        for term in terms_with_results:
+            results = Result.objects.filter(student=student, term=term)
+            
+            if results.exists():
+                total_marks_obtained = results.aggregate(Sum('marks_obtained'))['marks_obtained__sum'] or 0
+                total_marks_possible = results.aggregate(Sum('total_marks'))['total_marks__sum'] or 0
+                overall_percentage = (total_marks_obtained / total_marks_possible * 100) if total_marks_possible > 0 else 0
+                
+                # Calculate overall grade
+                if overall_percentage >= 90:
+                    overall_grade = 'A+'
+                elif overall_percentage >= 80:
+                    overall_grade = 'A'
+                elif overall_percentage >= 70:
+                    overall_grade = 'B+'
+                elif overall_percentage >= 60:
+                    overall_grade = 'B'
+                elif overall_percentage >= 50:
+                    overall_grade = 'C'
+                elif overall_percentage >= 40:
+                    overall_grade = 'D'
+                else:
+                    overall_grade = 'F'
+                
+                performance_data.append({
+                    'term_id': term.id,
+                    'term_display': str(term),
+                    'term_number': term.term_number,
+                    'academic_year': term.academic_year.year,
+                    'overall_percentage': round(overall_percentage, 2),
+                    'overall_grade': overall_grade,
+                    'total_marks_obtained': float(total_marks_obtained),
+                    'total_marks_possible': float(total_marks_possible),
+                })
+        
+        return Response({
+            'student_id': student.id,
+            'student_name': student.full_name,
+            'performance_trend': performance_data
+        })
 
 
 # Attendance Views
@@ -248,7 +328,6 @@ class DownloadReportCardView(APIView):
                 )
         
         try:
-            from students.models import Student
             student = Student.objects.get(id=student_id)
             term = Term.objects.get(id=term_id)
         except (Student.DoesNotExist, Term.DoesNotExist):

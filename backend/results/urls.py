@@ -8,6 +8,7 @@ from .views import (
     ResultUpdateView,
     ResultDeleteView,
     StudentResultsSummaryView,
+    StudentPerformanceTrendView,
     AttendanceListView,
     AttendanceCreateView,
     AttendanceUpdateView,
@@ -31,6 +32,7 @@ urlpatterns = [
     path('<int:pk>/update/', ResultUpdateView.as_view(), name='result_update'),
     path('<int:pk>/delete/', ResultDeleteView.as_view(), name='result_delete'),
     path('summary/<int:student_id>/<int:term_id>/', StudentResultsSummaryView.as_view(), name='results_summary'),
+    path('trend/<int:student_id>/', StudentPerformanceTrendView.as_view(), name='performance_trend'),
     path('report-card/<int:student_id>/<int:term_id>/', DownloadReportCardView.as_view(), name='download_report_card'),
     
     # Attendance

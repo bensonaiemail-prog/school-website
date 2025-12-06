@@ -316,7 +316,7 @@ This project is licensed under the MIT License.
 
 ## 👨‍💻 Author
 
-Benson AI
+Benson 
 
 ## 🙏 Acknowledgments
 
@@ -327,7 +327,7 @@ Benson AI
 
 ## 📧 Support
 
-For support, email bensonaiemail@example.com or create an issue in the repository.
+For support, email bensonaiemail@gmail.com or create an issue in the repository.
 
 ---
 
